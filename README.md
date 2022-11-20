@@ -1,0 +1,1 @@
+SlimECS is a lightweight ECS solution geared for performance and minimal memory usage.
