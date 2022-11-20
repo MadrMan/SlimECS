@@ -1,0 +1,35 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+Copyright (c) Microsoft. All rights reserved.
+Licensed under the MIT license. See LICENSE file in the project root for full license information.
+-->
+
+<!--
+This file is used to describe the HelloWorld component. This file is run through 
+vsdconfigtool.exe as part of the build, which generates HelloWorld.vsdconfig. HelloWorld.vsdconfig 
+is a binary version of this file which is deployed along with HelloWorld.dll. HelloWorld.vsdconfig 
+is then read by he component loading system at runtime.
+
+For more information about this file, see https://github.com/Microsoft/ConcordExtensibilitySamples/wiki/Component-discovery-and-configuration
+-->
+
+<Configuration xmlns="http://schemas.microsoft.com/vstudio/vsdconfig/2008">
+  <ManagedComponent
+    ComponentId="5F832295-C528-47D6-8B5B-1AC35CF70D37"
+    ComponentLevel="9991500"
+    AssemblyName="slimecs_vis">
+    <!--NOTE: For more information on ComponentLevel, see https://github.com/Microsoft/ConcordExtensibilitySamples/wiki/Component-Levels-->
+
+    <Class Name="SlimECS.CustomVisualiserService" WorkerProcessSupported="true">
+      <Implements>
+        <InterfaceGroup>
+            <Filter>
+                <VisualizerId RequiredValue="51736b14-9fb4-4b6d-8aca-a10a2b7ae768"/>
+            </Filter>
+            <Interface Name="IDkmCustomVisualizer"/>
+        </InterfaceGroup>
+      </Implements>
+    </Class>
+
+  </ManagedComponent>
+</Configuration>
