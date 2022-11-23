@@ -120,35 +120,35 @@ namespace slimecs
 #endif
 		}
 
-		bool IsValid() const
+		constexpr bool IsValid() const
 		{
 			return m_parts.m_index != kInvalidECSIndex;
 		}
 
-		operator bool() const
+		constexpr operator bool() const
 		{
 			return IsValid();
 		}
 
-		ecscontainerbase_t::size_type Index() const
+		constexpr ecscontainerbase_t::size_type Index() const
 		{
 			return m_parts.m_index;
 		}
 
-		ecscontainerbase_t::size_type Version() const
+		constexpr ecscontainerbase_t::size_type Version() const
 		{
 			return m_parts.m_version;
 		}
 
-		bool operator<(const ECSInstance& o) const {
+		constexpr bool operator<(const ECSInstance& o) const {
 			return std::tie(m_parts.m_index, m_parts.m_version) < std::tie(o.m_parts.m_index, o.m_parts.m_version);
 		}
 
-		bool operator==(const ECSInstance& o) const {
+		constexpr bool operator==(const ECSInstance& o) const {
 			return m_parts.m_index == o.m_parts.m_index && m_parts.m_version == o.m_parts.m_version;
 		}
 
-		operator ecscontainerbase_t::size_type() const
+		constexpr operator ecscontainerbase_t::size_type() const
 		{
 			return m_id;
 		}
@@ -173,6 +173,14 @@ namespace slimecs
 	template <class T>
 	struct ECSComponentType : public IECSComponentType
 	{
+		typedef T value_type;
+
+		ECSComponentType()
+		{
+			// Hack to force the Get() to be generated
+			auto p = (volatile void*)Get; p;
+		}
+
 		template<typename... Args>
 		void Grow(ECSChunk* chunk, Args&&... args)
 		{
@@ -212,6 +220,13 @@ namespace slimecs
 		}
 
 		const static ECSComponentID m_componentID;
+
+	private:
+		// Used by extensions/debugger for reliable resolving
+		static constexpr T& Get(ECSChunk* chunk, ecscontainerbase_t::size_type index)
+		{
+			return ecscontainerview_t<T>(chunk->m_data)[index];
+		}
 	};
 
 	struct ECSAlgorithm
@@ -248,6 +263,19 @@ namespace slimecs
 		}
 
 		ECSChunk* GetChunkByHash(ecshash_t hash)
+		{
+			for (auto& chunk : m_chunks)
+			{
+				if (chunk.m_componentID.m_hash == hash)
+				{
+					return &chunk;
+				}
+			}
+
+			return nullptr;
+		}
+
+		constexpr const ECSChunk* GetChunkByHash(ecshash_t hash) const
 		{
 			for (auto& chunk : m_chunks)
 			{
@@ -864,6 +892,14 @@ namespace slimecs
 			return pArchetype;
 		}
 
+		ECSArchetype* GetArchetype(ECSInstance id)
+		{
+			KnownECSInstance* known = &m_ids[id.Index()];
+			assert(m_ids[id.Index()].m_version == id.Version()); // ECSComponent id version mismatch!
+
+			return m_archetypes[known->m_archetype];
+		}
+
 		/// <summary>
 		/// Create a new instance with the set of components specified for the archetype
 		/// </summary>
@@ -942,8 +978,7 @@ namespace slimecs
 			AddNewComponents<std::remove_cvref_t<Ts>...>(instance);
 
 			// Add new chunks
-			auto& known = m_ids[instance.Index()];
-			auto pArchetype = m_archetypes[known.m_archetype];
+			auto pArchetype = GetArchetype(instance);
 			(pArchetype->GetChunk<std::remove_cvref_t<Ts>>()->Grow(), ...);
 		}
 
@@ -959,8 +994,7 @@ namespace slimecs
 			AddNewComponents<std::remove_cvref_t<Ts>...>(instance);
 
 			// Add new chunks
-			auto& known = m_ids[instance.Index()];
-			auto pArchetype = m_archetypes[known.m_archetype];
+			auto pArchetype = GetArchetype(instance);
 			(pArchetype->GrowChunkWithComponent(std::forward<Ts>(components)), ...);
 		}
 
@@ -1015,10 +1049,9 @@ namespace slimecs
 		template<class T>
 		bool HasComponent(ECSInstance id)
 		{
-			KnownECSInstance* known = &m_ids[id.Index()];
-			assert(m_ids[id.Index()].m_version == id.Version()); // ECSComponent id version mismatch!
+			auto pArchetype = GetArchetype(id);
 
-			return m_archetypes[known->m_archetype]->GetChunk<T>() != nullptr;
+			return pArchetype->GetChunk<T>() != nullptr;
 		}
 
 		/// <summary>

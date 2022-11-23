@@ -46,6 +46,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="CustomVisualiserService.cs" />
+    <Compile Include="DebuggerEval.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SlimECSReader.cs" />
   </ItemGroup>
@@ -56,11 +57,12 @@
     <PackageReference Include="Microsoft.VisualStudio.Debugger.Engine" Version="$(ConcordPackageVersion)">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <!--Reference the VSDConfigTool package. This brings build tools used to compile the .vsdconfigxml
-    file into a .vsdconfig file.-->
     <PackageReference Include="Microsoft.VSSDK.Debugger.VSDConfigTool" Version="$(ConcordPackageVersion)">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <!--Reference the VSDConfigTool package. This brings build tools used to compile the .vsdconfigxml
+    file into a .vsdconfig file.-->
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

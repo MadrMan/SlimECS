@@ -40,6 +40,9 @@ int main(int argc, char** argv)
 
 	sqlite3* hello = new sqlite3();
 
+	em.HasComponent<Composition>(brick);
+	auto arch = em.GetArchetype(ufo);
+
 	for (auto& [pos, vel] : em.Iterate<Position, Velocity>())
 	{
 		pos.x += vel.x;

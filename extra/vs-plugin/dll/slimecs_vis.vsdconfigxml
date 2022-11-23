@@ -14,22 +14,26 @@ For more information about this file, see https://github.com/Microsoft/ConcordEx
 -->
 
 <Configuration xmlns="http://schemas.microsoft.com/vstudio/vsdconfig/2008">
-  <ManagedComponent
-    ComponentId="5F832295-C528-47D6-8B5B-1AC35CF70D37"
-    ComponentLevel="9991500"
-    AssemblyName="slimecs_vis">
-    <!--NOTE: For more information on ComponentLevel, see https://github.com/Microsoft/ConcordExtensibilitySamples/wiki/Component-Levels-->
+	<DefineGuid Name="guidDefault" Value="EDB7480E-9ED7-4C6F-AFDC-DA7AC9917A9E"/>
+	<DefineGuid Name="guidVisualizer" Value="51736b14-9fb4-4b6d-8aca-a10a2b7ae768"/>
 
-    <Class Name="SlimECS.CustomVisualiserService" WorkerProcessSupported="true">
-      <Implements>
-        <InterfaceGroup>
-            <Filter>
-                <VisualizerId RequiredValue="51736b14-9fb4-4b6d-8aca-a10a2b7ae768"/>
-            </Filter>
-            <Interface Name="IDkmCustomVisualizer"/>
-        </InterfaceGroup>
-      </Implements>
-    </Class>
+	<ManagedComponent
+		ComponentId="5F832295-C528-47D6-8B5B-1AC35CF70D37"
+		ComponentLevel="9991500"
+		AssemblyName="slimecs_vis">
+		<!--NOTE: For more information on ComponentLevel, see https://github.com/Microsoft/ConcordExtensibilitySamples/wiki/Component-Levels-->
 
-  </ManagedComponent>
+		<Class Name="SlimECS.CustomVisualiserService" WorkerProcessSupported="true">
+			<Implements>
+				<InterfaceGroup>
+					<Filter>
+						<VisualizerId RequiredValue="guidDefault"/>
+						<VisualizerId RequiredValue="guidVisualizer"/>
+					</Filter>
+					<Interface Name="IDkmCustomVisualizer"/>
+				</InterfaceGroup>
+			</Implements>
+		</Class>
+
+	</ManagedComponent>
 </Configuration>
