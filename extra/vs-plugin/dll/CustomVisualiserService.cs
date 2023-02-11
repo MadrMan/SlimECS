@@ -113,7 +113,11 @@ namespace SlimECS
             if (dataItem.componentCount < 0)
             {
                 var count = eval.Execute(fnGetComponentCount(dataItem.ecsInstanceFullName)) as DkmSuccessEvaluationResult;
-                dataItem.componentCount = int.Parse(count.Value);
+
+                if (count != null)
+                {
+                    dataItem.componentCount = int.Parse(count.Value);
+                }
             }
 
             initialChildren = new DkmChildVisualizedExpression[0];
