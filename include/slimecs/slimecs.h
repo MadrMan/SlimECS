@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <algorithm>
 #include <span>
+#include <shared_mutex>
 
 #ifdef _MSC_VER
 #define SLIMECS_FUNCTION_NAME __FUNCSIG__
@@ -75,14 +76,16 @@ namespace slimecs
 	// An instance consisting of components
 	struct ECSInstance
 	{
+		typedef ecscontainerbase_t::size_type id_t;
+
 		union
 		{
 			struct
 			{
-				ecscontainerbase_t::size_type m_index : 48; // An index pointing to where the components are in each of the chunks
-				ecscontainerbase_t::size_type m_version : 16; // ecsversion_t, type must match so bitfield works - Keeps track of the current 'version' of the id. Gets bumped when the id is added/removed so we don't use outdated ids
+				id_t m_index : 48; // An index pointing to where the components are in each of the chunks
+				id_t m_version : 16; // ecsversion_t, type must match so bitfield works - Keeps track of the current 'version' of the id. Gets bumped when the id is added/removed so we don't use outdated ids
 			} m_parts;
-			ecscontainerbase_t::size_type m_id;
+			id_t m_id;
 		};
 
 		ECSInstance()
@@ -92,10 +95,10 @@ namespace slimecs
 		}
 
 #if SLIMECS_DEBUG_INFO
-		ECSManager* const m_ecsManager = nullptr;
+		ECSManager* m_ecsManager = nullptr;
 #endif
 
-		ECSInstance(ecscontainerbase_t::size_type t, ECSManager* ecsManager = nullptr)
+		explicit ECSInstance(id_t t, ECSManager* ecsManager = nullptr)
 #if SLIMECS_DEBUG_INFO
 			: m_ecsManager(ecsManager)
 #endif
@@ -107,7 +110,7 @@ namespace slimecs
 #endif
 		}
 
-		ECSInstance(ecscontainerbase_t::size_type index, ecsversion_t version, ECSManager* ecsManager = nullptr)
+		ECSInstance(id_t index, ecsversion_t version, ECSManager* ecsManager = nullptr)
 #if SLIMECS_DEBUG_INFO
 			: m_ecsManager(ecsManager)
 #endif
@@ -130,25 +133,27 @@ namespace slimecs
 			return IsValid();
 		}
 
-		constexpr ecscontainerbase_t::size_type Index() const
+		constexpr id_t Index() const
 		{
 			return m_parts.m_index;
 		}
 
-		constexpr ecscontainerbase_t::size_type Version() const
+		constexpr id_t Version() const
 		{
 			return m_parts.m_version;
 		}
 
-		constexpr bool operator<(const ECSInstance& o) const {
+		constexpr bool operator<(const ECSInstance& o) const 
+		{
 			return std::tie(m_parts.m_index, m_parts.m_version) < std::tie(o.m_parts.m_index, o.m_parts.m_version);
 		}
 
-		constexpr bool operator==(const ECSInstance& o) const {
+		constexpr bool operator==(const ECSInstance& o) const 
+		{
 			return m_parts.m_index == o.m_parts.m_index && m_parts.m_version == o.m_parts.m_version;
 		}
 
-		constexpr operator ecscontainerbase_t::size_type() const
+		constexpr operator id_t() const
 		{
 			return m_id;
 		}
@@ -618,11 +623,17 @@ namespace slimecs
 		class const_iterator
 		{
 		public:
-			const_iterator() { }
+			const_iterator() 
+				: m_archetypes(nullptr) 
+				, m_archetypeCurrent(0)
+				, m_archetypeCount(0) { }
 
-			const_iterator(const std::vector<ECSArchetype*>::const_iterator& current, const std::vector<ECSArchetype*>::const_iterator& end)
-				: m_current(current)
-				, m_end(end)
+			// Constructor of the iterator
+			// We avoid passing in iterators to the archetype so we can still reallocate it while looping, which is important for queries
+			const_iterator(const std::vector<ECSArchetype*>& archetypes, size_t archetypeCurrent)
+				: m_archetypes(&archetypes)
+				, m_archetypeCurrent(archetypeCurrent)
+				, m_archetypeCount(archetypes.size())
 			{
 				// Make sure we begin on an eligable iterator
 				FindEligableOrEnd();
@@ -630,7 +641,7 @@ namespace slimecs
 
 			void operator++()
 			{
-				m_current++;
+				++m_archetypeCurrent;
 
 				// We increased, make sure it's eligable (or skip ahead)
 				FindEligableOrEnd();
@@ -638,28 +649,29 @@ namespace slimecs
 
 			bool operator!=(const const_iterator& other) const
 			{
-				return m_current != other.m_current;
+				return m_archetypeCurrent != other.m_archetypeCurrent || m_archetypes != other.m_archetypes;
 			}
 
 			ECSArchetype* operator*() const
 			{
-				return *m_current;
+				return (*m_archetypes)[m_archetypeCurrent];
 			}
 
 		private:
-			std::vector<ECSArchetype*>::const_iterator m_current;
-			std::vector<ECSArchetype*>::const_iterator m_end;
+			const std::vector<ECSArchetype*>* m_archetypes;
+			size_t m_archetypeCurrent;
+			size_t m_archetypeCount;
 
 			void FindEligableOrEnd()
 			{
-				while (m_current != m_end)
+				while (m_archetypeCurrent != m_archetypeCount)
 				{
-					if (IsEligable(*m_current))
+					if (IsEligable(**this))
 					{
 						return;
 					}
 
-					m_current++;
+					++m_archetypeCurrent;
 				}
 			}
 
@@ -693,12 +705,12 @@ namespace slimecs
 
 		const_iterator begin() const
 		{
-			return const_iterator(m_archetypes.begin(), m_archetypes.end());
+			return const_iterator(m_archetypes, 0);
 		}
 
 		const_iterator end() const
 		{
-			return const_iterator(m_archetypes.end(), m_archetypes.end());
+			return const_iterator(m_archetypes, m_archetypes.size());
 		}
 
 	private:
@@ -1028,7 +1040,7 @@ namespace slimecs
 		}
 
 		/// <summary>
-		/// Get a reference to a component for single entity, relatively slow. Avoid using this for iteration and use ForEach instead.
+		/// Get a reference to a component for single entity, relatively slow. Avoid using this for iteration and use Iterate() instead.
 		/// </summary>
 		/// <typeparam name="T">Component type</typeparam>
 		/// <param name="id">Instance handle</param>
@@ -1216,7 +1228,7 @@ namespace slimecs
 
 			for (auto componentHash : hashes)
 			{
-				assert(pCurrentArchetype->GetChunkByHash(componentHash) == nullptr); // Verify it doesn't exist
+				assert(pCurrentArchetype->GetChunkByHash(componentHash) == nullptr); // Verify it doesn't exist - are you trying to add a component twice?
 				newtypehash = ECSArchetype::CombineTypeHash(newtypehash, componentHash);
 			}
 
@@ -1377,6 +1389,10 @@ namespace slimecs
 		std::vector<ecscontainerbase_t::size_type> m_freeIds;
 	};
 
+	/// <summary>
+	/// This class allows you to queue up several types of ECS operations
+	/// Unlike ECSManager, everything apart from Apply() is threadsafe, allowing you to perform ECS operations from multiple threads at the same time
+	/// </summary>
 	class ECSMutation
 	{
 	private:
@@ -1384,6 +1400,17 @@ namespace slimecs
 		{
 		public:
 			virtual void Apply(ECSManager& ecs) = 0;
+		};
+
+		typedef std::vector<std::pair<ecshash_t, std::unique_ptr<Applier>>> appliercontainer_t;
+
+		struct OperationData
+		{
+			appliercontainer_t m_destroyInstance;
+			appliercontainer_t m_createInstance;
+			appliercontainer_t m_addComponentNoArgs;
+			appliercontainer_t m_addComponentWithArgs;
+			appliercontainer_t m_removeComponent;
 		};
 
 		class CreateInstanceApplier : public Applier
@@ -1509,62 +1536,74 @@ namespace slimecs
 
 		void DestroyInstance(ECSInstance instance)
 		{
-			auto pApplier = GetApplier<DestroyInstanceApplier>(m_destroyInstance);
+			auto pOperationData = GetOperationsForThread();
+			auto pApplier = GetApplier<DestroyInstanceApplier>(pOperationData->m_destroyInstance);
 			pApplier->Add(instance);
 		}
 
 		template<class... Ts>
 		void AddComponent(ECSInstance instance)
 		{
-			auto pApplier = GetApplier<AddComponentNoArgsApplier<Ts...>, Ts...>(m_addComponentNoArgs);
+			auto pOperationData = GetOperationsForThread();
+			auto pApplier = GetApplier<AddComponentNoArgsApplier<Ts...>, Ts...>(pOperationData->m_addComponentNoArgs);
 			pApplier->Add(instance);
 		}
 
 		template<class... Ts>
 		void AddComponent(ECSInstance instance, Ts&&... components)
 		{
-			auto pApplier = GetApplier<AddComponentWithArgsApplier<Ts...>, Ts...>(m_addComponentWithArgs);
+			auto pOperationData = GetOperationsForThread();
+			auto pApplier = GetApplier<AddComponentWithArgsApplier<Ts...>, Ts...>(pOperationData->m_addComponentWithArgs);
 			pApplier->Add(instance, std::forward<Ts>(components)...);
 		}
 
 		template<class... Ts>
 		void RemoveComponent(ECSInstance instance)
 		{
-			auto pApplier = GetApplier<RemoveComponentApplier<Ts...>, Ts...>(m_removeComponent);
+			auto pOperationData = GetOperationsForThread();
+			auto pApplier = GetApplier<RemoveComponentApplier<Ts...>, Ts...>(pOperationData->m_removeComponent);
 			pApplier->Add(instance);
 		}
 
 		void Apply(ECSManager& ecs)
 		{
-			for (auto& a : m_createInstance)
+			for (auto& op : m_operations)
+			{
+				Apply(ecs, op.second.get());
+			}
+		}
+
+	private:
+		void Apply(ECSManager& ecs, OperationData* operationData)
+		{
+			for (auto& a : operationData->m_createInstance)
 			{
 				a.second->Apply(ecs);
 			}
 
-			for (auto& a : m_addComponentNoArgs)
+			for (auto& a : operationData->m_addComponentNoArgs)
 			{
 				a.second->Apply(ecs);
 			}
 
-			for (auto& a : m_addComponentWithArgs)
+			for (auto& a : operationData->m_addComponentWithArgs)
 			{
 				a.second->Apply(ecs);
 			}
 
-			for (auto& a : m_removeComponent)
+			for (auto& a : operationData->m_removeComponent)
 			{
 				a.second->Apply(ecs);
 			}
 
-			for (auto& a : m_destroyInstance)
+			for (auto& a : operationData->m_destroyInstance)
 			{
 				a.second->Apply(ecs);
 			}
 		}
 
-	private:
 		template<class C, class... Ts>
-		C* GetApplier(std::vector<std::pair<ecshash_t, std::unique_ptr<Applier>>>& applierVec)
+		C* GetApplier(appliercontainer_t& applierVec)
 		{
 			constexpr ecshash_t hash = ECSArchetype::GetComponentsHash<Ts...>();
 
@@ -1582,11 +1621,33 @@ namespace slimecs
 			return pApplier;
 		}
 
-		std::vector<std::pair<ecshash_t, std::unique_ptr<Applier>>> m_destroyInstance;
-		std::vector<std::pair<ecshash_t, std::unique_ptr<Applier>>> m_createInstance;
-		std::vector<std::pair<ecshash_t, std::unique_ptr<Applier>>> m_addComponentNoArgs;
-		std::vector<std::pair<ecshash_t, std::unique_ptr<Applier>>> m_addComponentWithArgs;
-		std::vector<std::pair<ecshash_t, std::unique_ptr<Applier>>> m_removeComponent;
+		OperationData* GetOperationsForThread()
+		{
+			auto tid = std::this_thread::get_id();
+
+			// Try to find thread data
+			{
+				std::shared_lock lock(m_operationLock);
+				auto it = m_operations.find(tid);
+				if (it != m_operations.end())
+				{
+					return it->second.get();
+				}
+			}
+
+			// Not found
+			std::unique_lock lock(m_operationLock);
+			auto& operationDataRef = m_operations[tid];
+			if (!operationDataRef)
+			{
+				operationDataRef.reset(new OperationData());
+			}
+			
+			return operationDataRef.get();
+		}
+
+		std::shared_mutex m_operationLock;
+		std::unordered_map<std::thread::id, std::unique_ptr<OperationData>> m_operations;
 	};
 
 	ECSChunk::ECSChunk(const ECSComponentID& componentID)
