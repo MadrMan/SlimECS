@@ -11,7 +11,7 @@ namespace slimecs
 	{
 	public:
 		typedef unsigned char slice_type;
-		typedef std::vector<std::unique_ptr<slice_type>> container_t;
+		typedef std::vector<std::unique_ptr<slice_type[]>> container_t;
 		typedef typename container_t::size_type size_type;
 
 		arraylist_data()
@@ -25,7 +25,7 @@ namespace slimecs
 
 		arraylist_data(arraylist_data&& other) noexcept
 			: m_elements(other.m_elements)
-			, m_slices(std::move(m_slices))
+			, m_slices(std::move(other.m_slices))
 		{
 			other.m_elements = 0;
 		}
@@ -308,7 +308,7 @@ namespace slimecs
 				return *this;
 			}
 
-			iterator operator+(const_iterator::difference_type offset) const
+			iterator operator+(typename const_iterator::difference_type offset) const
 			{
 				return iterator(this->m_data, this->m_index + offset);
 			}

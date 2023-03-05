@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <span>
 #include <shared_mutex>
+#include <thread>
+#include <mutex>
 
 #ifdef _MSC_VER
 #define SLIMECS_FUNCTION_NAME __FUNCSIG__
@@ -31,9 +33,11 @@
 #define SLIMECS_ASSERT assert
 #endif
 
+//#define SLIMECS_COMPONENT(__NAME) extern template const slimecs::ECSComponentID slimecs::ECSComponentType<__NAME>::m_componentID
+
 // Variable definitions and code to register a component on startup. Place once per component type in a source file!
-#define SLIMECS_COMPONENT_DEFINE(__NAME) const slimecs::ECSComponentID slimecs::ECSComponentType<__NAME>::m_componentID = \
-	slimecs::ECSManager::RegisterComponentType<__NAME>(slimecs::ECSManager::ComponentTypeToID<__NAME>(#__NAME));
+#define SLIMECS_COMPONENT_DEFINE(__NAME) template<> const slimecs::ECSComponentID slimecs::ECSComponentType<__NAME>::m_componentID = \
+	slimecs::ECSManager::RegisterComponentType<__NAME>(slimecs::ECSManager::ComponentTypeToID<__NAME>(#__NAME))
 
 namespace slimecs
 {
@@ -47,7 +51,7 @@ namespace slimecs
 	template<class T>
 	using ecscontainerview_t = arraylist_view<T, kECSSliceSize>;
 
-	const ecscontainerbase_t::size_type kInvalidECSIndex = ~(size_t) 0;
+	const ecscontainerbase_t::size_type kInvalidECSIndex = 0x0000ffffffffffff;
 	const ecsarchetype_index_t kInvalidArchetypeIndex = ~(ecsarchetype_index_t) 0;
 
 	class ECSManager;
@@ -66,6 +70,7 @@ namespace slimecs
 	// Internal class for ecs manager registration
 	struct IECSComponentType
 	{
+		virtual ~IECSComponentType() {};
 		virtual void Grow(ECSChunk* chunk) = 0;
 		virtual void GrowMove(ECSChunk* srcChunk, ECSChunk* targetChunk, ecscontainerbase_t::size_type srcIndex) = 0;
 		virtual void Remove(ECSChunk* chunk, ecscontainerbase_t::size_type index) = 0;
@@ -183,7 +188,7 @@ namespace slimecs
 		ECSComponentType()
 		{
 			// Hack to force the Get() to be generated
-			auto p = (volatile void*)Get; p;
+			auto p = (volatile void*)Get; static_cast<void>(p);
 		}
 
 		template<typename... Args>
@@ -420,7 +425,7 @@ namespace slimecs
 			static constexpr std::size_t depth = Depth;
 			typedef N type;
 
-			iterator_stack(nullptr_t) { }
+			iterator_stack(std::nullptr_t) { }
 
 			iterator_stack(ECSChunk** chunks)
 				: iterator_stack<Depth + 1, Ns...>(chunks + 1)
@@ -575,7 +580,7 @@ namespace slimecs
 	{
 		bool operator()(ECSArchetype* pArchetype)
 		{
-			return (this->HasChunk<Ts>(pArchetype) && ...);
+			return (this->template HasChunk<Ts>(pArchetype) && ...);
 		}
 	};
 
@@ -587,7 +592,7 @@ namespace slimecs
 	{
 		bool operator()(ECSArchetype* pArchetype)
 		{
-			return (this->HasChunk<Ts>(pArchetype) || ...) == false;
+			return (this->template HasChunk<Ts>(pArchetype) || ...) == false;
 		}
 	};
 
@@ -599,7 +604,7 @@ namespace slimecs
 	{
 		bool operator()(ECSArchetype* pArchetype)
 		{
-			return (this->HasChunk<Ts>(pArchetype) || ...);
+			return (this->template HasChunk<Ts>(pArchetype) || ...);
 		}
 	};
 
@@ -735,8 +740,8 @@ namespace slimecs
 			const_iterator() : const_iterator({}, {}) { }
 
 			const_iterator(
-				ECSArchetypeQuery<Filter, Ts...>::const_iterator&& archetypesItCur,
-				ECSArchetypeQuery<Filter, Ts...>::const_iterator&& archetypesItEnd)
+				typename ECSArchetypeQuery<Filter, Ts...>::const_iterator&& archetypesItCur,
+				typename ECSArchetypeQuery<Filter, Ts...>::const_iterator&& archetypesItEnd)
 				: m_archetypeItCur(archetypesItCur)
 				, m_archetypeItEnd(archetypesItEnd)
 			{ 
@@ -799,7 +804,7 @@ namespace slimecs
 			{
 				while (m_archetypeItCur != m_archetypeItEnd)
 				{
-					ECSChunk* chunks[sizeof...(Ts)] = { ((*m_archetypeItCur)->GetChunk<Ts>())... };
+					ECSChunk* chunks[sizeof...(Ts)] = { ((*m_archetypeItCur)->template GetChunk<Ts>())... };
 					m_iteratorStack = ECSComponentGroup::iterator_type<Ts...>(chunks);
 
 					if (!m_iteratorStack.AtEnd())
@@ -813,8 +818,8 @@ namespace slimecs
 				m_iteratorStack = ECSComponentGroup::iterator_type<Ts...>(nullptr);
 			}
 
-			ECSArchetypeQuery<Filter, Ts...>::const_iterator m_archetypeItCur;
-			ECSArchetypeQuery<Filter, Ts...>::const_iterator m_archetypeItEnd;
+			typename ECSArchetypeQuery<Filter, Ts...>::const_iterator m_archetypeItCur;
+			typename ECSArchetypeQuery<Filter, Ts...>::const_iterator m_archetypeItEnd;
 			ECSComponentGroup::iterator_type<Ts...> m_iteratorStack;
 		};
 
@@ -866,7 +871,12 @@ namespace slimecs
 		template<class T>
 		static ECSComponentID RegisterComponentType(ECSComponentID id)
 		{
-			GetComponentTypes()[id.m_hash] = new ECSComponentType<T>();
+			auto& types = GetComponentTypes();
+			auto & ptr = types[id.m_hash];
+			SLIMECS_ASSERT(ptr == nullptr);
+
+			ptr.reset(new ECSComponentType<T>());
+
 			return id;
 		}
 
@@ -881,7 +891,7 @@ namespace slimecs
 			auto it = types.find(hash);
 			assert(it != types.end()); // All components should be registered statically at init!
 
-			return it != types.end() ? it->second : nullptr;
+			return it != types.end() ? it->second.get() : nullptr;
 		}
 
 		/// <summary>
@@ -1371,9 +1381,9 @@ namespace slimecs
 			known->m_archetype = archetypeIndex;
 		}
 
-		static std::unordered_map<ecshash_t, IECSComponentType*>& GetComponentTypes()
+		static std::unordered_map<ecshash_t, std::unique_ptr<IECSComponentType>>& GetComponentTypes()
 		{
-			static std::unordered_map<ecshash_t, IECSComponentType*> types;
+			static std::unordered_map<ecshash_t, std::unique_ptr<IECSComponentType>> types;
 			return types;
 		}
 
@@ -1399,6 +1409,8 @@ namespace slimecs
 		class Applier 
 		{
 		public:
+			virtual ~Applier() {}
+
 			virtual void Apply(ECSManager& ecs) = 0;
 		};
 
