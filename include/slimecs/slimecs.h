@@ -264,8 +264,6 @@ namespace slimecs
 	class ECSArchetype
 	{
 	private:
-		std::vector<ecscontainerbase_t::size_type> m_chunkToId;
-
 		ECSArchetype(ecshash_t hash, const std::span<const ECSComponentID>& components)
 			: m_typehash(hash)
 			, m_chunks(components.begin(), components.end())
@@ -394,6 +392,7 @@ namespace slimecs
 
 	protected:
 		ecshash_t m_typehash;
+		std::vector<ecscontainerbase_t::size_type> m_chunkToId;
 		std::vector<ECSChunk> m_chunks;
 
 	private:
@@ -989,6 +988,29 @@ namespace slimecs
 		}
 
 		/// <summary>
+		/// Destroy all instances that match the given query
+		/// </summary>
+		template<class... Ts>
+		void DestroyInstance()
+		{
+			DestroyInstance(And<Ts...>());
+		}
+
+		/// <summary>
+		/// Destroy all instances that match the given query
+		/// </summary>
+		template<class... Ts, template<class...> class Andable, class... Filterables>
+		void DestroyInstance(Andable<Ts...>&&, Filterables&&...)
+		{
+			const ECSArchetypeQuery<ECSFilterCollection<Filterables...>, Ts...> query(m_archetypes);
+
+			for (ECSArchetype* pArchetype : query)
+			{
+				ClearArchetype(pArchetype);
+			}
+		}
+
+		/// <summary>
 		/// Add new components to an existing instance
 		/// </summary>
 		/// <typeparam name="Ts">One or more component types to add</typeparam>
@@ -1145,6 +1167,22 @@ namespace slimecs
 
 		std::vector<ECSArchetype*> m_archetypes;
 
+		void ClearArchetype(ECSArchetype* pArchetype)
+		{
+			for (auto& chunk : pArchetype->m_chunks)
+			{
+				chunk.Clear();
+			}
+			
+			for (auto index : pArchetype->m_chunkToId)
+			{
+				m_ids[index].m_version++;
+				m_freeIds.push_back(index);
+			}
+
+			pArchetype->m_chunkToId.clear();
+		}
+
 		void RemoveComponent(ECSInstance instance, const std::span<const ecshash_t>& removedhashes)
 		{
 			// Straightforward operation:
@@ -1161,7 +1199,7 @@ namespace slimecs
 			for (auto hash : removedhashes)
 			{
 				assert(pCurrentArchetype->GetChunkByHash(hash) != nullptr); // Verify it exists
-				newtypehash = ECSArchetype::CombineTypeHash(newtypehash, hash);
+				newtypehash = ECSArchetype::CombineTypeHash(newtypehash, hash); // Combine is reversible
 			}
 
 			ECSArchetype* pNewArchetype = GetArchetype(newtypehash);
@@ -1681,6 +1719,11 @@ namespace slimecs
 	void ECSChunk::Remove(ecscontainerbase_t::size_type index)
 	{
 		m_type->Remove(this, index);
+	}
+
+	void ECSChunk::Clear()
+	{
+		m_type->Clear(this);
 	}
 }
 

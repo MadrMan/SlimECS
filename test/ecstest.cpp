@@ -111,6 +111,35 @@ namespace slimecs
 		ASSERT_TRUE(id2.IsValid());
 	}
 
+	TEST_F(ECSTest, EntitiesCanBeCounted)
+	{
+		auto id1 = m_dm.CreateInstance(TestComponent1());
+		auto id2 = m_dm.CreateInstance(TestComponent1());
+
+		ASSERT_EQ(m_dm.Count<TestComponent1>(), 2);
+
+		m_dm.DestroyInstance(id1);
+		ASSERT_EQ(m_dm.Count<TestComponent1>(), 1);
+
+		m_dm.DestroyInstance(id2);
+		ASSERT_EQ(m_dm.Count<TestComponent1>(), 0);
+	}
+
+	TEST_F(ECSTest, EntitiesCanBeDestroyedWithFilter)
+	{
+		m_dm.CreateInstance(TestComponent1());
+		m_dm.CreateInstance(TestComponent1());
+		m_dm.CreateInstance(TestComponent2());
+		m_dm.CreateInstance(TestComponent1(), TestComponent2());
+
+		ASSERT_EQ(m_dm.Count<TestComponent2>(), 2);
+
+		m_dm.DestroyInstance<TestComponent1>();
+
+		ASSERT_EQ(m_dm.Count<TestComponent2>(), 1);
+		ASSERT_EQ(m_dm.Count<TestComponent1>(), 0);
+	}
+
 	TEST_F(ECSTest, EntityFromArchetypeHasComponent)
 	{
 		auto pArche1 = m_dm.GetArchetype<TestComponent1, TestComponent2>();
