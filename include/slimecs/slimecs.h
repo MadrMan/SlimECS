@@ -634,8 +634,8 @@ namespace slimecs
 
 			// Constructor of the iterator
 			// We avoid passing in iterators to the archetype so we can still reallocate it while looping, which is important for queries
-			const_iterator(const std::vector<ECSArchetype*>& archetypes, size_t archetypeCurrent)
-				: m_archetypes(&archetypes)
+			const_iterator(const std::vector<std::unique_ptr<ECSArchetype>>& archetypes, size_t archetypeCurrent)
+				: m_archetypes(archetypes)
 				, m_archetypeCurrent(archetypeCurrent)
 				, m_archetypeCount(archetypes.size())
 			{
@@ -658,11 +658,11 @@ namespace slimecs
 
 			ECSArchetype* operator*() const
 			{
-				return (*m_archetypes)[m_archetypeCurrent];
+				return m_archetypes[m_archetypeCurrent].get();
 			}
 
 		private:
-			const std::vector<ECSArchetype*>* m_archetypes;
+			const std::vector<std::unique_ptr<ECSArchetype>>& m_archetypes;
 			size_t m_archetypeCurrent;
 			size_t m_archetypeCount;
 
@@ -702,7 +702,7 @@ namespace slimecs
 		{
 		}
 
-		ECSArchetypeQuery(const std::vector<ECSArchetype*>& archetypes)
+		ECSArchetypeQuery(const std::vector<std::unique_ptr<ECSArchetype>>& archetypes)
 			: m_archetypes(archetypes)
 		{
 		}
@@ -718,7 +718,7 @@ namespace slimecs
 		}
 
 	private:
-		const std::vector<ECSArchetype*>& m_archetypes;
+		const std::vector<std::unique_ptr<ECSArchetype>>& m_archetypes;
 	};
 
 	template <class Filter, class... Ts>
@@ -822,7 +822,7 @@ namespace slimecs
 			ECSComponentGroup::iterator_type<Ts...> m_iteratorStack;
 		};
 
-		ECSQuery(const std::vector<ECSArchetype*>& archetypes)
+		ECSQuery(const std::vector<std::unique_ptr<ECSArchetype>>& archetypes)
 			: m_archetypeQuery(archetypes)
 		{
 		}
@@ -844,15 +844,11 @@ namespace slimecs
 	class ECSManager
 	{
 	public:
-		ECSManager() { }
+		ECSManager() {}
+		~ECSManager() {}
 
-		~ECSManager()
-		{
-			for (auto pArchetype : m_archetypes)
-			{
-				delete pArchetype;
-			}
-		}
+		ECSManager(ECSManager&&) = default;
+		ECSManager& operator=(ECSManager&&) = default;
 
 		template<class T>
 		static constexpr ECSComponentID ComponentTypeToID(const char* name)
@@ -918,7 +914,7 @@ namespace slimecs
 			KnownECSInstance* known = &m_ids[id.Index()];
 			assert(m_ids[id.Index()].m_version == id.Version()); // ECSComponent id version mismatch!
 
-			return m_archetypes[known->m_archetype];
+			return m_archetypes[known->m_archetype].get();
 		}
 
 		/// <summary>
@@ -1065,7 +1061,7 @@ namespace slimecs
 		{
 			KnownECSInstance* known = &m_ids[id.Index()];
 			assert(m_ids[id.Index()].m_version == id.Version()); // ECSComponent id version mismatch!
-			auto pArchetype = m_archetypes[known->m_archetype];
+			auto& pArchetype = m_archetypes[known->m_archetype];
 			auto idToChunk = known->m_idToChunk;
 
 			return std::tuple<Ts&...>(pArchetype->GetChunkView<std::remove_cvref_t<Ts>>()[idToChunk]...);
@@ -1099,7 +1095,7 @@ namespace slimecs
 		}
 
 		/// <summary>
-		/// Iterate over all entities that have at least the given set of components
+		/// Iterate over all entities that have at least the set of components specified in the template
 		/// </summary>
 		/// <typeparam name="Ts">List of components</typeparam>
 		/// <example> 
@@ -1164,8 +1160,18 @@ namespace slimecs
 	private:
 		ECSManager(const ECSManager&) = delete;
 		ECSManager& operator=(const ECSManager&) = delete;
+		
+		// Keeps the relevant indexing data for a single ECSInstace. Fits nicely in 64 bits.
+		struct KnownECSInstance
+		{
+			ecscontainerbase_t::size_type m_idToChunk;
+			ecsversion_t m_version;
+			ecsarchetype_index_t m_archetype;
+		};
 
-		std::vector<ECSArchetype*> m_archetypes;
+		std::vector<std::unique_ptr<ECSArchetype>> m_archetypes;
+		std::vector<KnownECSInstance> m_ids;
+		std::vector<ecscontainerbase_t::size_type> m_freeIds;
 
 		void ClearArchetype(ECSArchetype* pArchetype)
 		{
@@ -1190,7 +1196,7 @@ namespace slimecs
 			// - Move each of the existing components over
 			// - Done
 			auto& known = m_ids[instance.Index()];
-			auto pCurrentArchetype = m_archetypes[known.m_archetype];
+			auto pCurrentArchetype = m_archetypes[known.m_archetype].get();
 			auto idToCurrentChunk = known.m_idToChunk;
 
 			// Calculate hash for new archetype lookup
@@ -1266,7 +1272,7 @@ namespace slimecs
 			// - Move each of the existing components over
 			// - Done
 			auto& known = m_ids[instance.Index()];
-			auto pCurrentArchetype = m_archetypes[known.m_archetype];
+			auto pCurrentArchetype = m_archetypes[known.m_archetype].get();
 			auto idToCurrentChunk = known.m_idToChunk;
 
 			// Calculate hash for new archetype lookup
@@ -1372,13 +1378,13 @@ namespace slimecs
 			//int dummy[] = { (RegisterComponentType<Ts>(), 0)... };
 
 			// Check if we don't already have this type
-			for (auto pArchetype : m_archetypes)
+			for (auto& pArchetype : m_archetypes)
 			{
 				if (pArchetype->m_typehash == typehash)
 				{
 					// Return cached version
 					// We cannot return the fully templated version because the template order matters for some functions
-					return pArchetype;
+					return pArchetype.get();
 				}
 			}
 
@@ -1394,8 +1400,7 @@ namespace slimecs
 			assert(GetArchetype(hash) == nullptr);
 
 			// Create type if we don't have it
-			auto pType = new ECSArchetype(hash, components);
-			m_archetypes.push_back(pType);
+			ECSArchetype* pType = m_archetypes.emplace_back(new ECSArchetype(hash, components)).get();
 
 			return pType;
 		}
@@ -1407,10 +1412,16 @@ namespace slimecs
 		/// <param name="pArchetype">The archetype to switch to</param>
 		void SetInstanceArchetype(ECSInstance instance, ECSArchetype* pArchetype)
 		{
-			auto it = std::find(m_archetypes.begin(), m_archetypes.end(), pArchetype);
-			assert(it != m_archetypes.end());
-
-			int archetypeIndex = (int) std::distance(m_archetypes.begin(), it);
+			int archetypeIndex = 0;
+			for (; archetypeIndex < m_archetypes.size(); archetypeIndex++)
+			{
+				if (m_archetypes[archetypeIndex].get() == pArchetype)
+				{
+					break;
+				}
+			}
+	
+			assert(archetypeIndex < (int) m_archetypes.size());
 
 			// Return index into first chunk - they should all be identical
 			// TODO: Consider letting this return a tuple of chunk references so we can directly init from this function
@@ -1424,17 +1435,6 @@ namespace slimecs
 			static std::unordered_map<ecshash_t, std::unique_ptr<IECSComponentType>> types;
 			return types;
 		}
-
-		// Keeps the relevant indexing data for a single ECSInstace. Fits nicely in 64 bits.
-		struct KnownECSInstance
-		{
-			ecscontainerbase_t::size_type m_idToChunk;
-			ecsversion_t m_version;
-			ecsarchetype_index_t m_archetype;
-		};
-
-		std::vector<KnownECSInstance> m_ids;
-		std::vector<ecscontainerbase_t::size_type> m_freeIds;
 	};
 
 	/// <summary>
