@@ -309,13 +309,13 @@ namespace slimecs
 			ASSERT_EQ(std::distance(query2.begin(), query2.end()), 2);
 		}
 
-		m_dm.CreateInstance(TestComponent1{ 2 });
+		m_dm.CreateInstance(TestComponent1{ 2 }, TestComponent2{ 1 });
 		{
 			auto query3 = m_dm.Iterate<TestComponent1>();
 			ASSERT_EQ(std::distance(query3.begin(), query3.end()), 3);
 		}
 
-		m_dm.CreateInstance(TestComponent1{ 3 });
+		m_dm.CreateInstance(TestComponent1{ 3 }, TestComponent3{ 1 });
 		{
 			auto query4 = m_dm.Iterate<TestComponent1>();
 			ASSERT_EQ(std::distance(query4.begin(), query4.end()), 4);
@@ -353,6 +353,14 @@ namespace slimecs
 		for (auto it = query.begin(); it != end; ++it)
 		{
 			auto& [comp] = *it;
+		};
+
+		for (auto it = query.begin(); it != end; ++it)
+		{
+			auto next = std::next(it, 1);
+
+			ASSERT_EQ(next, next);
+			ASSERT_NE(it, next);
 		};
 	}
 

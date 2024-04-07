@@ -651,6 +651,11 @@ namespace slimecs
 				FindEligableOrEnd();
 			}
 
+			bool operator==(const const_iterator& other) const
+			{
+				return m_archetypeCurrent == other.m_archetypeCurrent && m_archetypes == other.m_archetypes;
+			}
+
 			bool operator!=(const const_iterator& other) const
 			{
 				return m_archetypeCurrent != other.m_archetypeCurrent || m_archetypes != other.m_archetypes;
@@ -762,12 +767,12 @@ namespace slimecs
 
 			bool operator!=(const const_iterator& other) const
 			{
-				return m_iteratorStack != other.m_iteratorStack;
+				return m_archetypeItCur != other.m_archetypeItCur || m_iteratorStack != other.m_iteratorStack;
 			}
 
 			bool operator==(const const_iterator& other) const
 			{
-				return m_iteratorStack == other.m_iteratorStack;
+				return m_archetypeItCur == other.m_archetypeItCur && m_iteratorStack == other.m_iteratorStack;
 			}
 
 			const_reference operator*() const
