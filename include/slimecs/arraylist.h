@@ -202,7 +202,7 @@ namespace slimecs
 			typedef typename arraylist_view::const_pointer pointer;
 			typedef typename arraylist_view::const_reference reference;
 			typedef typename arraylist_view::const_reference const_reference;
-			typedef std::forward_iterator_tag iterator_category; // TODO: Make this a random_access_iterator_tag
+			typedef std::random_access_iterator_tag iterator_category;
 
 			const_iterator()
 				: m_data(nullptr), m_index(std::numeric_limits<decltype(m_index)>::max()), m_iterator(nullptr) { }
@@ -240,6 +240,11 @@ namespace slimecs
 				}
 
 				return *this;
+			}
+
+			difference_type operator-(const_iterator other) const
+			{
+				return m_index - other.m_index;
 			}
 
 			const_iterator operator++(int)
