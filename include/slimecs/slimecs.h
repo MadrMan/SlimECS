@@ -75,7 +75,6 @@ namespace slimecs
 		virtual void GrowMove(ECSChunk* srcChunk, ECSChunk* targetChunk, ecscontainerbase_t::size_type srcIndex) = 0;
 		virtual void Remove(ECSChunk* chunk, ecscontainerbase_t::size_type index) = 0;
 		virtual void Clear(ECSChunk* chunk) = 0;
-		virtual void Move(ECSChunk* srcChunk, ECSChunk* targetChunk, ecscontainerbase_t::size_type srcIndex, ecscontainerbase_t::size_type targetIndex) = 0;
 	};
 
 	// An instance consisting of components
@@ -199,7 +198,16 @@ namespace slimecs
 
 		void Grow(ECSChunk* chunk) override
 		{
-			ecscontainerview_t<T>(chunk->m_data).emplace_back();
+			if constexpr (std::is_default_constructible_v<T>)
+			{
+				ecscontainerview_t<T>(chunk->m_data).emplace_back();
+			}
+			else
+			{
+				// Create a component with uninitialized memory as fallback
+				ecscontainerview_t<T>(chunk->m_data).reserve_back();
+				assert("Cannot default construct component type");
+			}
 		}
 
 		void GrowMove(ECSChunk* srcChunk, ECSChunk* targetChunk, ecscontainerbase_t::size_type srcIndex) override
@@ -215,11 +223,6 @@ namespace slimecs
 		void Clear(ECSChunk* chunk) override
 		{
 			ecscontainerview_t<T>(chunk->m_data).clear();
-		}
-
-		void Move(ECSChunk* srcChunk, ECSChunk* targetChunk, ecscontainerbase_t::size_type srcIndex, ecscontainerbase_t::size_type targetIndex) override
-		{
-			ecscontainerview_t<T>(targetChunk->m_data)[targetIndex] = std::move(ecscontainerview_t<T>(srcChunk->m_data)[srcIndex]);
 		}
 
 		static constexpr ecshash_t GetHash()
@@ -1014,22 +1017,6 @@ namespace slimecs
 		/// <summary>
 		/// Add new components to an existing instance
 		/// </summary>
-		/// <typeparam name="Ts">One or more component types to add</typeparam>
-		/// <param name="instance">The entity to add components to</param>
-		template<class... Ts>
-		void AddComponent(ECSInstance instance)
-		{
-			// Switch entity to archetype with new components
-			AddNewComponents<std::remove_cvref_t<Ts>...>(instance);
-
-			// Add new chunks
-			auto pArchetype = GetArchetype(instance);
-			(pArchetype->GetChunk<std::remove_cvref_t<Ts>>()->Grow(), ...);
-		}
-
-		/// <summary>
-		/// Add new components to an existing instance
-		/// </summary>
 		/// <param name="instance">The entity to add components to</param>
 		/// <param name="components">One or more components to add to the instance</param>
 		template<class... Ts>
@@ -1513,29 +1500,6 @@ namespace slimecs
 		};
 
 		template<class... Ts>
-		class AddComponentNoArgsApplier : public Applier
-		{
-		public:
-			void Add(ECSInstance instance)
-			{
-				m_operations.push_back(instance);
-			}
-
-			void Apply(ECSManager& ecs) override
-			{
-				for (auto& op : m_operations)
-				{
-					ecs.AddComponent<Ts...>(op);
-				}
-
-				m_operations.clear();
-			}
-
-		private:
-			std::vector<ECSInstance> m_operations;
-		};
-
-		template<class... Ts>
 		class AddComponentWithArgsApplier : public Applier
 		{
 		public:
@@ -1593,14 +1557,6 @@ namespace slimecs
 		{
 			auto pOperationData = GetOperationsForThread();
 			auto pApplier = GetApplier<DestroyInstanceApplier>(pOperationData->m_destroyInstance);
-			pApplier->Add(instance);
-		}
-
-		template<class... Ts>
-		void AddComponent(ECSInstance instance)
-		{
-			auto pOperationData = GetOperationsForThread();
-			auto pApplier = GetApplier<AddComponentNoArgsApplier<Ts...>, Ts...>(pOperationData->m_addComponentNoArgs);
 			pApplier->Add(instance);
 		}
 

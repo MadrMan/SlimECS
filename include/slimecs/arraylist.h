@@ -99,8 +99,7 @@ namespace slimecs
 			return *this;
 		}
 
-		template<typename... Args>
-		reference emplace_back(Args&&... args)
+		reference reserve_back()
 		{
 			size_type indexInSlice, indexOfSlice;
 			index_to_slice(m_data->m_elements, &indexInSlice, &indexOfSlice);
@@ -115,8 +114,17 @@ namespace slimecs
 				slice = m_data->get_slice<T>(indexOfSlice);
 			}
 
-			pointer pElem = new (&slice[indexInSlice]) T(std::forward<Args>(args)...);
+			pointer pElem = &slice[indexInSlice];
 			m_data->m_elements++;
+
+			return *pElem;
+		}
+
+		template<typename... Args>
+		reference emplace_back(Args&&... args)
+		{
+			reference elem = reserve_back();
+			pointer pElem = new (&elem) T(std::forward<Args>(args)...);
 
 			return *pElem;
 		}

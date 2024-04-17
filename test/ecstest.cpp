@@ -530,7 +530,7 @@ namespace slimecs
 		auto inst = m_dm.CreateInstance<TestComponent1>();
 		ECSMutation mut;
 
-		mut.AddComponent<TestComponent2>(inst);
+		mut.AddComponent(inst, TestComponent2{});
 		mut.RemoveComponent<TestComponent1>(inst);
 
 		mut.Apply(m_dm);
