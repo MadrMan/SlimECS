@@ -193,7 +193,7 @@ namespace slimecs
 		template<typename... Args>
 		void Grow(ECSChunk* chunk, Args&&... args)
 		{
-			ecscontainerview_t<T>(chunk->m_data).emplace_back(std::forward<Args>(args)...);
+			ecscontainerview_t<T>(chunk->m_data).emplace_back(std::forward<Args&&>(args)...);
 		}
 
 		void Grow(ECSChunk* chunk) override
@@ -330,14 +330,14 @@ namespace slimecs
 		{
 			ECSChunk* pChunk = GetChunk<std::remove_cvref_t<T>>();
 			auto pComponentType = static_cast<ECSComponentType<std::remove_cvref_t<T>>*>(pChunk->m_type);
-			pComponentType->Grow(pChunk, std::forward<T>(component));
+			pComponentType->Grow(pChunk, std::forward<T&&>(component));
 		}
 
 		template<class... Ts>
 		ecscontainerbase_t::size_type CreateInstance(ecscontainerbase_t::size_type idsIndex, Ts&&... components)
 		{
 			// Grow each chunk with the matching component
-			(GrowChunkWithComponent(std::forward<Ts>(components)), ...);
+			(GrowChunkWithComponent(std::forward<Ts&&>(components)), ...);
 
 			// Update bookkeeping
 			return TrackNewInstance(idsIndex);
@@ -965,7 +965,7 @@ namespace slimecs
 		{
 			ECSArchetype* pArchetype = GetArchetype<Ts...>();
 			ECSInstance instance = CreateNewInstance(pArchetype);
-			m_ids[instance.Index()].m_idToChunk = pArchetype->CreateInstance(instance.Index(), std::forward<Ts>(components)...);
+			m_ids[instance.Index()].m_idToChunk = pArchetype->CreateInstance(instance.Index(), std::forward<Ts&&>(components)...);
 
 			return instance;
 		}
@@ -1027,7 +1027,7 @@ namespace slimecs
 
 			// Add new chunks
 			auto pArchetype = GetArchetype(instance);
-			(pArchetype->GrowChunkWithComponent(std::forward<Ts>(components)), ...);
+			(pArchetype->GrowChunkWithComponent(std::forward<Ts&&>(components)), ...);
 		}
 
 		/// <summary>
@@ -1505,7 +1505,7 @@ namespace slimecs
 		public:
 			void Add(ECSInstance instance, Ts&&... components)
 			{
-				m_operations.emplace_back(instance, std::forward<Ts>(components)...);
+				m_operations.emplace_back(instance, std::forward<Ts&&>(components)...);
 			}
 
 			void Apply(ECSManager& ecs) override
@@ -1565,7 +1565,7 @@ namespace slimecs
 		{
 			auto pOperationData = GetOperationsForThread();
 			auto pApplier = GetApplier<AddComponentWithArgsApplier<Ts...>, Ts...>(pOperationData->m_addComponentWithArgs);
-			pApplier->Add(instance, std::forward<Ts>(components)...);
+			pApplier->Add(instance, std::forward<Ts&&>(components)...);
 		}
 
 		template<class... Ts>
